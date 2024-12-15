@@ -2,3 +2,4 @@
 db.sqlite3
 */__pycache__
 video_app/migrations/__pycache__/__init__.cpython-312.pyc
+media/
