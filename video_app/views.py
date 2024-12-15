@@ -1,9 +1,11 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser
-from rest_framework import status
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 
 
 class VideoUploadView(APIView):
-    def get(self, req):
-        return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
+    authentication_classes = [TokenAuthentication,]
+    permission_classes = [IsAuthenticated,]
+    def post(self, req):
+        return Response({'error': 'No file uploaded'}, status=200)
