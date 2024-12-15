@@ -1,45 +1,26 @@
+
+import os
+from datetime import datetime, timedelta
+from contextlib import ExitStack
+from functools import partial
+
+from django.http import FileResponse
+from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
-import os
-from moviepy.editor import VideoFileClip
+
+
 from .serializer import VideoSerializer, SharedLinkSerializer
 from .models import Video, SharedLink
-from datetime import datetime, timedelta
-from django.http import FileResponse
+from .utils import video_file_editor
+
 
 class CustomAPIView(APIView):
     authentication_classes = [TokenAuthentication,]
     permission_classes = [IsAuthenticated,]
 
-
-from contextlib import ExitStack
-from functools import partial
-
-class VideoFileOperation:
-    def __init__(self):
-        self.max_duration = 25
-        self.min_duration = 5
-
-    def get_video_duration(self, file_path):
-        try:
-            clip = VideoFileClip(file_path)
-            duration = clip.duration  # in seconds
-            clip.close()
-            return duration, None
-        except Exception as e:
-            return None, Response({'error': f'Error processing video: {str(e)}'}, status=500)
-    
-    def validate_video_duration(self, duration):
-        if duration>=self.min_duration and duration<=self.max_duration:
-            return None, None
-        else:
-            return None, Response({'error': f"video duration should be in between {self.min_duration}-{self.max_duration} sec"}, status=200)
-    
-
-
-oo = VideoFileOperation()
 
 class UploadVideoView(CustomAPIView):
     """
@@ -47,21 +28,15 @@ class UploadVideoView(CustomAPIView):
     - maximum size: e.g. 5 mb, 25 mb
     - minimum and maximum duration: e.g. 25 secs, 5 secs
     """
-    def file_size_check(self, file_obj):
-        max_size = 25 * 1024 * 1024  # 25 MB
-        if file_obj.size > max_size:
-            return None, Response({'error': 'File size exceeds 25 MB limit'}, status=400)
-        None, None
-
 
     def post(self, req):
         file_obj = req.data.get("file", None)
         if not file_obj:
-            return Response({'error': 'No file uploaded'}, status=400)
+            return Response({'error': 'No file uploaded'}, status=status.HTTP_400_BAD_REQUEST)
         
         max_size = 25 * 1024 * 1024  # 25 MB
         if file_obj.size > max_size:
-            return None, Response({'error': 'File size exceeds 25 MB limit'}, status=400)
+            return None, Response({'error': 'File size exceeds 25 MB limit'}, status=status.HTTP_400_BAD_REQUEST)
         
 
         # Save file temporarily to analyze it
@@ -72,44 +47,58 @@ class UploadVideoView(CustomAPIView):
         
         with ExitStack() as stack:
             stack.callback(partial(os.remove, temp_file_path))
-            duration, err = oo.get_video_duration(temp_file_path)
+
+            duration, err = video_file_editor.get_video_duration(temp_file_path)
             if err:
-                return err
-            _, err =  oo.validate_video_duration(duration)
+                return Response(err, status.HTTP_400_BAD_REQUEST)
+            
+            _, err =  video_file_editor.validate_video_duration(duration)
             if err:
-                return err
+                return Response(err, status.HTTP_400_BAD_REQUEST)
             
             # Save video metadata to database
             video = Video.objects.create(
                 file=file_obj,
                 size=file_obj.size,
                 duration=duration,
+                user=req.user
             )
             return Response(VideoSerializer(video).data, status=201)
 
-        
+ 
+class GetVideoByIdView(CustomAPIView):
+    def get(self, req, video_id):
+        try:
+            # Fetch the video by ID
+            video = Video.objects.get(id=video_id, user=req.user)
+        except Video.DoesNotExist:
+            return Response({'error': 'Video not found'}, status=status.HTTP_404_NOT_FOUND)
 
+        video_file = video.file
+        return FileResponse(video_file, as_attachment=True)
+
+           
 class CreateSharedLinkView(CustomAPIView):
 
-    def post(self, request, video_id):
+    def post(self, req, video_id):
         try:
-            video = Video.objects.get(id=video_id)
+            video = Video.objects.get(id=video_id, user=req.user)
         except Video.DoesNotExist:
             return Response({'error': 'Video not found'}, status=404)
 
         # Get expiry duration from the request (default to 24 hours)
-        expiry_hours = int(request.data.get('expiry_hours', 24))
+        expiry_hours = int(req.data.get('expiry_hours', 24))
         expiry_time = datetime.now() + timedelta(hours=expiry_hours)
 
         # Create a shared link
         shared_link = SharedLink.objects.create(video=video, expiry_time=expiry_time)
         serializer = SharedLinkSerializer(shared_link)
 
-        return Response(serializer.data, status=201)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class AccessSharedLinkView(CustomAPIView):
-    def get(self, request, token):
+    def get(self, req, token):
         try:
             shared_link = SharedLink.objects.get(token=token)
         except SharedLink.DoesNotExist:
@@ -124,14 +113,36 @@ class AccessSharedLinkView(CustomAPIView):
         return FileResponse(video_file, as_attachment=True)
 
 
-class MergeVideoView(CustomAPIView):
-
-    def post(self, req):
-        return Response({'error': 'No file uploaded'}, status=200)
-
-
 class TrimVideoView(CustomAPIView):
+    def post(self, req, video_id):
+        try:
+            video = Video.objects.get(id=video_id, user=req.user)
+        except Video.DoesNotExist:
+            return Response({'error': 'Video not found'}, status=status.HTTP_404_NOT_FOUND)
 
+        # Get start and end times from the request
+        start_time = float(req.data.get('start_time', 0))
+        end_time = float(req.data.get('end_time', video.duration))
+
+        # Validate start and end times
+        if start_time < 0 or end_time > video.duration or start_time >= end_time:
+            return Response({'error': 'Invalid start or end time'}, status=status.HTTP_400_BAD_REQUEST)
+
+        res, err = video_file_editor.trim_video(video, start_time, end_time)
+        
+        return Response(res or err, status=status.HTTP_200_OK if not err else status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class MergeVideosView(CustomAPIView):
     def post(self, req):
-        return Response({'error': 'No file uploaded'}, status=200)
+        video_ids = req.data.get('video_ids', [])
+        if not video_ids or len(video_ids) < 2:
+            return Response({'error': 'At least two videos are required for merging'}, status=status.HTTP_400_BAD_REQUEST)
 
+        videos = Video.objects.filter(id__in=video_ids, user=req.user)
+        if len(videos) != len(video_ids):
+            return Response({'error': 'One or more videos not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        res, err = video_file_editor.merge_video([video.file.path for video in videos], req.user)
+
+        return Response(res or err, status=status.HTTP_200_OK if not err else status.HTTP_500_INTERNAL_SERVER_ERROR)

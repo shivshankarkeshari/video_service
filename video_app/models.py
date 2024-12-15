@@ -2,7 +2,7 @@ from django.db import models
 import uuid
 from datetime import datetime
 from django.utils import timezone
-
+from django.contrib.auth.models import User  # Use the default User model
 
 
 class Video(models.Model):
@@ -10,6 +10,7 @@ class Video(models.Model):
     size = models.BigIntegerField()  # File size in bytes
     duration = models.FloatField()  # Duration in seconds
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='videos')
 
 
 class SharedLink(models.Model):
