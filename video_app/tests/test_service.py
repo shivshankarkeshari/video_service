@@ -115,4 +115,16 @@ class TestVideoService(TestCase):
             assert Video.objects.get(id=new_video_id).duration==end_time-start_time
     
     def test_merge_video(self):
-        assert 1==1
+        self.test_upload_video(self.file_path)
+        
+        videos_ids = [video.id for video in Video.objects.all()]
+        res = self.client.post(
+            path=reverse('merge-videos'),
+            headers={"Authorization": f"Token {self.user.auth_token.key}"},
+            data={"video_ids": videos_ids},
+            content_type="application/json"
+        )
+        assert res.status_code==200
+        if res.status_code==200:
+            new_id = res.data.get("merged_video_id")
+            assert sum(Video.objects.filter(id__in = videos_ids).values_list("duration", flat=True))==Video.objects.get(id=new_id).duration
