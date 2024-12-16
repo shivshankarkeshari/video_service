@@ -63,7 +63,7 @@ class UploadVideoView(CustomAPIView):
                 duration=duration,
                 user=req.user
             )
-            return Response(VideoSerializer(video).data, status=201)
+            return Response(VideoSerializer(video).data, status=status.HTTP_201_CREATED)
 
  
 class GetVideoByIdView(CustomAPIView):
