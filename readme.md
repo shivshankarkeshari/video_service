@@ -32,7 +32,7 @@ python manage.py createsuperuser --username admin --email admin@example.com
 ```
 set apassword
 
-login to below link to generate tokon via django Administration
+login to below link to generate token via django Administration
 ```
 http://127.0.0.1:8000/admin/login/?next=/admin/
 ```
