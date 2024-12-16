@@ -16,6 +16,11 @@ class TestVideoService(TestCase):
                                              password='1234567890')
         Token.objects.create(user=self.user)
         self.client = Client()
+        
+        # one video upload to test cases where we need to upload video before run
+        self.file_path = "./video_app/tests/sample_960x540.mp4"
+        self.test_upload_video(self.file_path)
+        self.video_obj = Video.objects.first()
 
 
     def test_upload_video(self, file_path=None):
@@ -45,8 +50,6 @@ class TestVideoService(TestCase):
         )
         assert res.status_code==404
 
-        file_path = "./video_app/tests/sample_960x540.mp4"
-        self.test_upload_video(file_path)
         video_obj = Video.objects.first()
         if not video_obj:
             assert False
@@ -63,13 +66,11 @@ class TestVideoService(TestCase):
             with open('./response.mp4', 'wb+') as destination:
                 for chunk in res.streaming_content:
                     destination.write(chunk)
-            assert os.path.getsize("./response.mp4")==os.path.getsize(file_path)  
+            assert os.path.getsize("./response.mp4")==os.path.getsize(self.file_path)  
             os.remove('./response.mp4')     
     
 
     def test_create_shared_link(self):
-        file_path = "./video_app/tests/sample_960x540.mp4"
-        self.test_upload_video(file_path)
         video_obj = Video.objects.first()
         res = self.client.post(
             path=reverse('create-shared-link', kwargs={"video_id": video_obj.id}),
@@ -96,7 +97,22 @@ class TestVideoService(TestCase):
 
     
     def test_trim_video(self):
-        assert 1==1
+        start_time = 2
+        end_time = 10
+        res = self.client.post(
+            path=reverse('trim-video', kwargs={"video_id": self.video_obj.id}),
+            headers={"Authorization": f"Token {self.user.auth_token.key}"},
+            data={
+                    "start_time": start_time,
+                    "end_time": end_time
+                }
+        )
+        assert res.status_code==200
+        if res.status_code==200:
+            new_video_id = res.data.get("trimmed_video_id", None)
+            if not new_video_id:
+                assert False
+            assert Video.objects.get(id=new_video_id).duration==end_time-start_time
     
     def test_merge_video(self):
         assert 1==1

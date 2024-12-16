@@ -36,7 +36,7 @@ class VideoFileEditor:
             # Save the trimmed video to memory
             output_buffer = BytesIO()
             output_filename = f"trimmed_{os.path.basename(video_obj.file.name)}"
-            clip.write_videofile(output_filename, codec="libx264")
+            clip.write_videofile(output_filename, codec="libx264", verbose=False, logger=None)
             clip.close()
 
             # Save trimmed video as a new Video instance
@@ -67,7 +67,7 @@ class VideoFileEditor:
             # Save the merged video to memory
             output_buffer = BytesIO()
             output_filename = "merged_video.mp4"
-            merged_clip.write_videofile(output_filename, codec="libx264")
+            merged_clip.write_videofile(output_filename, codec="libx264", verbose=False, logger=None)
             merged_clip.close()
 
             # Save merged video as a new Video instance
